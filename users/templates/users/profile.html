@@ -1,0 +1,337 @@
+<!-- users/templates/users/profile.html -->
+{% extends 'users/base.html' %}
+{% load static %}
+
+{% block title %}Мой профиль{% endblock %}
+
+{% block content %}
+<div class="container mt-4">
+    <div class="row">
+        <!-- Левая колонка - Информация о пользователе -->
+        <div class="col-md-4 mb-4">
+            <div class="card shadow">
+                <div class="card-header bg-primary text-white">
+                    <h5 class="mb-0">
+                        <i class="fas fa-user-circle me-2"></i>Мой профиль
+                    </h5>
+                </div>
+                <div class="card-body">
+                    <div class="text-center mb-3">
+                        <i class="fas fa-user-circle fa-5x text-primary"></i>
+                    </div>
+
+                    <div id="profile-info">
+                        <!-- Данные будут загружены через AJAX -->
+                        <div class="text-center">
+                            <div class="spinner-border text-primary" role="status">
+                                <span class="visually-hidden">Загрузка...</span>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Информация о реферальной системе -->
+            <div class="card shadow mt-3">
+                <div class="card-header bg-info text-white">
+                    <h6 class="mb-0">
+                        <i class="fas fa-info-circle me-2"></i>Как это работает
+                    </h6>
+                </div>
+                <div class="card-body">
+                    <ul class="list-unstyled mb-0">
+                        <li class="mb-2">
+                            <i class="fas fa-gift text-success me-2"></i>
+                            Поделитесь своим инвайт-кодом с друзьями
+                        </li>
+                        <li class="mb-2">
+                            <i class="fas fa-user-plus text-primary me-2"></i>
+                            Когда друг зарегистрируется и введет ваш код
+                        </li>
+                        <li>
+                            <i class="fas fa-trophy text-warning me-2"></i>
+                            Вы увидите его в списке ваших рефералов
+                        </li>
+                    </ul>
+                </div>
+            </div>
+        </div>
+
+        <!-- Правая колонка - Реферальная система -->
+        <div class="col-md-8">
+            <!-- Мой инвайт-код -->
+            <div class="card shadow mb-4">
+                <div class="card-header bg-success text-white">
+                    <h5 class="mb-0">
+                        <i class="fas fa-code me-2"></i>Мой инвайт-код
+                    </h5>
+                </div>
+                <div class="card-body text-center">
+                    <h2 class="display-4 mb-3">
+                        <code id="my-invite-code">----</code>
+                    </h2>
+                    <button class="btn btn-outline-success" id="copy-invite-code">
+                        <i class="fas fa-copy me-2"></i>Скопировать код
+                    </button>
+                    <button class="btn btn-outline-primary" id="share-invite-code">
+                        <i class="fas fa-share-alt me-2"></i>Поделиться
+                    </button>
+                </div>
+            </div>
+
+            <!-- Активация инвайт-кода -->
+            <div class="card shadow mb-4" id="activate-section">
+                <div class="card-header bg-warning">
+                    <h5 class="mb-0">
+                        <i class="fas fa-key me-2"></i>Активировать инвайт-код
+                    </h5>
+                </div>
+                <div class="card-body">
+                    <div id="activate-form-container">
+                        <!-- Форма активации -->
+                        <form id="activate-invite-form">
+                            {% csrf_token %}
+                            <div class="input-group">
+                                <input type="text"
+                                       class="form-control form-control-lg"
+                                       id="invite-code-input"
+                                       placeholder="Введите 6-значный код"
+                                       maxlength="6"
+                                       pattern="[A-Za-z0-9]{6}"
+                                       style="text-transform: uppercase;">
+                                <button class="btn btn-warning btn-lg" type="submit" id="activate-btn">
+                                    <i class="fas fa-check me-2"></i>
+                                    <span class="button-text">Активировать</span>
+                                    <span class="spinner-border spinner-border-sm d-none" role="status"></span>
+                                </button>
+                            </div>
+                            <div class="invalid-feedback d-block" id="activate-error"></div>
+                        </form>
+                    </div>
+
+                    <!-- Информация об активированном коде (скрыта изначально) -->
+                    <div id="activated-info" style="display: none;">
+                        <div class="alert alert-success">
+                            <i class="fas fa-check-circle me-2"></i>
+                            Вы активировали инвайт-код: <strong id="activated-code"></strong>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Список рефералов -->
+            <div class="card shadow">
+                <div class="card-header bg-primary text-white">
+                    <h5 class="mb-0">
+                        <i class="fas fa-users me-2"></i>
+                        Мои рефералы
+                        <span class="badge bg-light text-dark ms-2" id="referral-count">0</span>
+                    </h5>
+                </div>
+                <div class="card-body">
+                    <div id="referrals-list">
+                        <div class="text-center py-3">
+                            <div class="spinner-border text-primary" role="status">
+                                <span class="visually-hidden">Загрузка...</span>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+{% block extra_js %}
+<script>
+    $(document).ready(function() {
+        let userData = null;
+        let csrfToken = $('[name=csrfmiddlewaretoken]').val();
+
+        $.ajaxSetup({
+            headers: {'X-CSRFToken': csrfToken}
+        });
+
+        // Загрузка профиля
+        function loadProfile() {
+            $.ajax({
+                url: '/api/profile/',
+                method: 'GET',
+                success: function(data) {
+                    userData = data;
+                    updateProfileUI(data);
+                },
+                error: function(xhr) {
+                    if (xhr.status === 401 || xhr.status === 403) {
+                        window.location.href = '/login/';
+                    } else {
+                        showError('Ошибка загрузки профиля');
+                    }
+                }
+            });
+        }
+
+        // Обновление UI данными профиля
+        function updateProfileUI(data) {
+            // Основная информация
+            let profileHtml = `
+                <h6>${data.phone_number}</h6>
+                <p class="text-muted">
+                    <i class="fas fa-calendar me-1"></i>
+                    На сайте с ${new Date(data.date_joined).toLocaleDateString('ru-RU')}
+                </p>
+            `;
+            $('#profile-info').html(profileHtml);
+
+            // Инвайт-код
+            $('#my-invite-code').text(data.invite_code);
+
+            // Статус активации
+            if (data.activated_invite_code) {
+                $('#activate-form-container').hide();
+                $('#activated-code').text(data.activated_invite_code);
+                $('#activated-info').show();
+            } else {
+                $('#activate-form-container').show();
+                $('#activated-info').hide();
+            }
+
+            // Количество рефералов
+            $('#referral-count').text(data.referred_count);
+
+            // Список рефералов
+            if (data.referred_users && data.referred_users.length > 0) {
+                let referralsHtml = '<div class="list-group">';
+                data.referred_users.forEach(function(phone) {
+                    referralsHtml += `
+                        <div class="list-group-item d-flex justify-content-between align-items-center">
+                            <span>
+                                <i class="fas fa-user me-2 text-primary"></i>
+                                ${phone}
+                            </span>
+                            <span class="badge bg-success rounded-pill">
+                                <i class="fas fa-check me-1"></i>Активен
+                            </span>
+                        </div>
+                    `;
+                });
+                referralsHtml += '</div>';
+                $('#referrals-list').html(referralsHtml);
+            } else {
+                $('#referrals-list').html(`
+                    <div class="text-center text-muted py-4">
+                        <i class="fas fa-user-plus fa-3x mb-3"></i>
+                        <p>У вас пока нет рефералов</p>
+                        <p class="small">Поделитесь своим инвайт-кодом с друзьями!</p>
+                    </div>
+                `);
+            }
+        }
+
+        // Активация инвайт-кода
+        $('#activate-invite-form').on('submit', function(e) {
+            e.preventDefault();
+
+            let inviteCode = $('#invite-code-input').val().toUpperCase();
+
+            if (inviteCode.length !== 6) {
+                $('#activate-error').text('Инвайт-код должен состоять из 6 символов');
+                return;
+            }
+
+            let btn = $('#activate-btn');
+            btn.prop('disabled', true);
+            btn.find('.button-text').text('Активация...');
+            btn.find('.spinner-border').removeClass('d-none');
+
+            $('#activate-error').text('');
+
+            $.ajax({
+                url: '/api/profile/activate-invite/',
+                method: 'POST',
+                contentType: 'application/json',
+                data: JSON.stringify({invite_code: inviteCode}),
+                success: function(response) {
+                    showMessage('success', 'Инвайт-код успешно активирован!');
+                    loadProfile(); // Перезагружаем профиль
+                },
+                error: function(xhr) {
+                    let error = xhr.responseJSON?.error || xhr.responseJSON?.invite_code || 'Ошибка активации';
+                    $('#activate-error').text(error);
+                },
+                complete: function() {
+                    btn.prop('disabled', false);
+                    btn.find('.button-text').text('Активировать');
+                    btn.find('.spinner-border').addClass('d-none');
+                }
+            });
+        });
+
+        // Копирование инвайт-кода
+        $('#copy-invite-code').on('click', function() {
+            let code = $('#my-invite-code').text();
+            navigator.clipboard.writeText(code).then(function() {
+                showMessage('success', 'Инвайт-код скопирован в буфер обмена!');
+            }).catch(function() {
+                // Fallback
+                let input = $('<input>').val(code).appendTo('body').select();
+                document.execCommand('copy');
+                input.remove();
+                showMessage('success', 'Инвайт-код скопирован!');
+            });
+        });
+
+        // Поделиться кодом
+        $('#share-invite-code').on('click', function() {
+            let code = $('#my-invite-code').text();
+            let shareText = `Присоединяйся к реферальной системе! Используй мой инвайт-код: ${code}`;
+
+            if (navigator.share) {
+                navigator.share({
+                    title: 'Реферальная система',
+                    text: shareText,
+                    url: window.location.origin
+                }).catch(() => {});
+            } else {
+                // Fallback
+                let input = $('<input>').val(shareText).appendTo('body').select();
+                document.execCommand('copy');
+                input.remove();
+                showMessage('success', 'Текст для приглашения скопирован!');
+            }
+        });
+
+        // Автоматический uppercase для инвайт-кода
+        $('#invite-code-input').on('input', function() {
+            $(this).val($(this).val().toUpperCase());
+        });
+
+        // Вспомогательные функции
+        function showMessage(type, text) {
+            let alertClass = 'alert-' + type;
+            let icon = type === 'success' ? 'check-circle' : 'exclamation-circle';
+
+            let messageHtml = `
+                <div class="alert ${alertClass} alert-dismissible fade show mt-3" role="alert">
+                    <i class="fas fa-${icon} me-2"></i>${text}
+                    <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+                </div>
+            `;
+
+            $('.container').prepend(messageHtml);
+
+            setTimeout(function() {
+                $('.alert').alert('close');
+            }, 3000);
+        }
+
+        function showError(text) {
+            showMessage('danger', text);
+        }
+
+        // Загружаем профиль при загрузке страницы
+        loadProfile();
+    });
+</script>
+{% endblock %}
+{% endblock %}

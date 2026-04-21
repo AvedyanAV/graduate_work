@@ -1,0 +1,53 @@
+version: '3.9'
+
+services:
+  web:
+    build: .
+    command: sh -c "python manage.py collectstatic --noinput && gunicorn config.wsgi:application --bind 0.0.0.0:8000"
+    volumes:
+      - .:/config
+      - static_volume:/config/staticfiles
+    ports:
+      - '8000:8000'
+    environment:
+      - DEBUG=True
+      - DATABASE_HOST=db
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    env_file:
+      - ./.env
+
+  db:
+    image: postgres:16.0
+    env_file:
+      - ./.env
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ['CMD-SHELL', 'pg_isready -U postgres']
+      interval: 30s
+      timeout: 10s
+      retries: 5
+
+  redis:
+    image: redis:alpine
+    env_file:
+      - ./.env
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: [ 'CMD', 'redis-cli', 'ping' ]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+
+networks:
+  default:
+
+volumes:
+  postgres_data:
+  static_volume:
+  redis_data:
