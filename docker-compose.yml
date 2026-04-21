@@ -1,17 +1,17 @@
-version: '3.9'
-
 services:
   web:
     build: .
-    command: sh -c "python manage.py collectstatic --noinput && gunicorn config.wsgi:application --bind 0.0.0.0:8000"
+    command: sh -c "python manage.py migrate --noinput && python manage.py collectstatic --noinput && gunicorn config.wsgi:application --bind 0.0.0.0:8000"
     volumes:
-      - .:/config
-      - static_volume:/config/staticfiles
+      - .:/app
+      - static_volume:/app/staticfiles
+      - media_volume:/app/media
     ports:
       - '8000:8000'
     environment:
-      - DEBUG=True
-      - DATABASE_HOST=db
+      - DB_HOST=db
+      - DB_PORT=5432
+      - REDIS_HOST=redis
     depends_on:
       db:
         condition: service_healthy
@@ -19,35 +19,45 @@ services:
         condition: service_healthy
     env_file:
       - ./.env
+    restart: unless-stopped
 
   db:
-    image: postgres:16.0
-    env_file:
-      - ./.env
+    image: postgres:16-alpine
+    container_name: referral_db
+    environment:
+      - POSTGRES_DB=${DB_NAME:-referral_db}
+      - POSTGRES_USER=${DB_USER:-postgres}
+      - POSTGRES_PASSWORD=${DB_PASSWORD:-postgres123}
     volumes:
       - postgres_data:/var/lib/postgresql/data
+    # Порт 5432 только внутри Docker сети, не публикуем наружу
+    expose:
+      - "5432"
     healthcheck:
-      test: ['CMD-SHELL', 'pg_isready -U postgres']
-      interval: 30s
-      timeout: 10s
+      test: ['CMD-SHELL', 'pg_isready -U ${DB_USER:-postgres}']
+      interval: 10s
+      timeout: 5s
       retries: 5
+    restart: unless-stopped
 
   redis:
-    image: redis:alpine
-    env_file:
-      - ./.env
+    image: redis:7-alpine
+    container_name: referral_redis
+    command: redis-server --appendonly yes --requirepass ${REDIS_PASSWORD:-redis123}
     volumes:
       - redis_data:/data
+    # Порт 6379 только внутри Docker сети
+    expose:
+      - "6379"
     healthcheck:
-      test: [ 'CMD', 'redis-cli', 'ping' ]
-      interval: 30s
-      timeout: 10s
+      test: ['CMD', 'redis-cli', 'ping']
+      interval: 10s
+      timeout: 5s
       retries: 5
-
-networks:
-  default:
+    restart: unless-stopped
 
 volumes:
   postgres_data:
   static_volume:
+  media_volume:
   redis_data:

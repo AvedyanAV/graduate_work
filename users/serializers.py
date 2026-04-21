@@ -1,31 +1,28 @@
 from rest_framework import serializers
-from django.core.validators import RegexValidator
 from .models import User
 from .utils import SMSVerificationService
 from .validators import validate_invite_code
 
 
 class PhoneNumberSerializer(serializers.Serializer):
-    """Проверка номера телефона."""
+    """Базовый сериализатор для номера телефона."""
     phone_number = serializers.CharField(
-        max_length=15,
-        validators=[
-            RegexValidator(
-                regex=r'^\+?[0-9]{10,15}$',
-                message="Введите корректный номер телефона (10-15 цифр, можно с + в начале)"
-            )
-        ],
+        max_length=20,
+        help_text="Номер телефона в международном формате (например, +79991234567)"
     )
 
     def validate_phone_number(self, value):
-        """Убираем все нецифровые символы, кроме '+' в начале."""
+        """Валидация и нормализация номера телефона."""
         if value.startswith('+'):
             normalized = '+' + ''.join(filter(str.isdigit, value[1:]))
         else:
             normalized = ''.join(filter(str.isdigit, value))
 
-        if len(normalized.replace('+', '')) < 10:
-            raise serializers.ValidationError("Номер телефона слишком короткий")
+        digits_only = normalized.replace('+', '')
+        if len(digits_only) < 10 or len(digits_only) > 15:
+            raise serializers.ValidationError(
+                "Номер телефона должен содержать от 10 до 15 цифр"
+            )
 
         return normalized
 
@@ -36,7 +33,7 @@ class SendCodeSerializer(PhoneNumberSerializer):
 
 
 class VerifyCodeSerializer(PhoneNumberSerializer):
-    """Проверка кода подтверждения."""
+    """Сериализатор для проверки кода подтверждения."""
     code = serializers.CharField(
         max_length=4,
         min_length=4,
@@ -44,15 +41,18 @@ class VerifyCodeSerializer(PhoneNumberSerializer):
     )
 
     def validate_code(self, value):
-        """Проверяет, что код состоит только из цифр."""
+        """Проверка формата кода."""
         if not value.isdigit():
             raise serializers.ValidationError("Код должен состоять только из цифр")
         return value
 
     def validate(self, attrs):
-        """Проверяет соответствие кода номеру телефона."""
-        phone_number = attrs['phone_number']
-        code = attrs['code']
+        """Проверка кода подтверждения."""
+        phone_number = attrs.get('phone_number')
+        code = attrs.get('code')
+
+        if not phone_number or not code:
+            raise serializers.ValidationError("Телефон и код обязательны")
 
         if not SMSVerificationService.verify_code(phone_number, code):
             raise serializers.ValidationError({
@@ -63,19 +63,22 @@ class VerifyCodeSerializer(PhoneNumberSerializer):
 
 
 class ActivateInviteCodeSerializer(serializers.Serializer):
-    """
-    Сериализатор для активации инвайт-кода.
-    """
+    """Сериализатор для активации инвайт-кода."""
     invite_code = serializers.CharField(
         max_length=6,
         min_length=6,
-        validators=[validate_invite_code],
-        help_text="6-значный инвайт-код для активации"
+        help_text="6-значный инвайт-код другого пользователя (буквы и цифры)"
     )
 
     def validate_invite_code(self, value):
         """Приводит код к верхнему регистру и проверяет существование."""
         value = value.upper()
+
+        # Проверяем формат
+        try:
+            validate_invite_code(value)
+        except Exception as e:
+            raise serializers.ValidationError(str(e))
 
         if not User.objects.filter(invite_code=value).exists():
             raise serializers.ValidationError("Инвайт-код не найден в системе")
@@ -109,7 +112,6 @@ class ActivateInviteCodeSerializer(serializers.Serializer):
             })
 
         attrs['inviter'] = inviter
-
         return attrs
 
 
@@ -119,16 +121,16 @@ class UserProfileSerializer(serializers.ModelSerializer):
         help_text="Список телефонов пользователей, активировавших мой инвайт-код"
     )
     referred_count = serializers.SerializerMethodField(
-        help_text="Количество пользователей, активировавших мой инвайт-код"
+        help_text="Количество пользователей, активировавших инвайт-код"
     )
     activated_invite_code = serializers.SerializerMethodField(
-        help_text="Инвайт-код, который я активировал"
+        help_text="Инвайт-код, который активировал пользователь"
     )
     activated_invite_phone = serializers.SerializerMethodField(
-        help_text="Номер телефона пользователя, чей код я активировал"
+        help_text="Номер телефона пользователя, чей код активирован"
     )
     can_activate_invite = serializers.SerializerMethodField(
-        help_text="Могу ли я активировать инвайт-код"
+        help_text="Может ли пользователь активировать инвайт-код"
     )
 
     class Meta:
@@ -149,27 +151,22 @@ class UserProfileSerializer(serializers.ModelSerializer):
         read_only_fields = fields
 
     def get_referred_users(self, obj):
-        """Возвращает список телефонов приглашенных пользователей."""
         return obj.get_referred_phones()
 
     def get_referred_count(self, obj):
-        """Возвращает количество приглашенных пользователей."""
         return obj.get_referred_users_count()
 
     def get_activated_invite_code(self, obj):
-        """Возвращает активированный инвайт-код."""
         if obj.activated_invite_code:
             return obj.activated_invite_code.invite_code
         return None
 
     def get_activated_invite_phone(self, obj):
-        """Возвращает телефон пользователя, чей код активирован."""
         if obj.activated_invite_code:
             return obj.activated_invite_code.phone_number
         return None
 
     def get_can_activate_invite(self, obj):
-        """Проверяет, может ли пользователь активировать инвайт-код."""
         return obj.can_activate_invite()
 
 
@@ -177,4 +174,5 @@ class ReferralStatsSerializer(serializers.Serializer):
     """Сериализатор для статистики реферальной системы."""
     total_users = serializers.IntegerField()
     users_with_activated_invite = serializers.IntegerField()
+    activation_rate = serializers.FloatField(required=False)
     top_referrers = serializers.ListField(child=serializers.DictField())

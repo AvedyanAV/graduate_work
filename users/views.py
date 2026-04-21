@@ -18,6 +18,8 @@ from .utils import SMSVerificationService
 from django.views.generic import TemplateView
 from django.contrib.auth.mixins import LoginRequiredMixin
 from django.shortcuts import redirect
+from drf_spectacular.utils import extend_schema, extend_schema_view, OpenApiExample, OpenApiResponse
+from drf_spectacular.types import OpenApiTypes
 
 
 class LoginPageView(TemplateView):
@@ -57,6 +59,40 @@ def logout_view(request):
     return redirect('users:login_page')
 
 
+@extend_schema_view(
+    post=extend_schema(
+        tags=['auth'],
+        summary='Отправка кода подтверждения',
+        description='''Отправляет 4-значный код подтверждения на указанный номер телефона.''',
+        request=SendCodeSerializer,
+        responses={
+            200: OpenApiResponse(
+                response=OpenApiTypes.OBJECT,
+                description='Код успешно отправлен',
+                examples=[
+                    OpenApiExample(
+                        'Успешный ответ',
+                        value={
+                            'status': 'success',
+                            'message': 'Код подтверждения отправлен',
+                            'phone_number': '+79991234567',
+                            'delay_seconds': 1.23,
+                            'debug_code': '1234'  # Только в DEBUG режиме
+                        }
+                    )
+                ]
+            ),
+            400: OpenApiResponse(description='Ошибка валидации номера телефона'),
+        },
+        examples=[
+            OpenApiExample(
+                'Пример запроса',
+                value={'phone_number': '+79991234567'},
+                request_only=True
+            )
+        ]
+    )
+)
 class SendVerificationCodeView(APIView):
     """Отправка кода подтверждения на номер телефона."""
     permission_classes = [AllowAny]
@@ -93,6 +129,39 @@ class SendVerificationCodeView(APIView):
         return Response(response_data, status=status.HTTP_200_OK)
 
 
+@extend_schema_view(
+    post=extend_schema(
+        tags=['auth'],
+        summary='Подтверждение кода и авторизация',
+        description='''Проверяет код подтверждения и авторизует пользователя.''',
+        request=VerifyCodeSerializer,
+        responses={
+            200: OpenApiResponse(
+                response=UserProfileSerializer,
+                description='Успешная авторизация',
+                examples=[
+                    OpenApiExample(
+                        'Новый пользователь',
+                        value={
+                            'status': 'success',
+                            'message': 'Авторизация успешна',
+                            'is_new_user': True,
+                            'user': {
+                                'phone_number': '+79991234567',
+                                'invite_code': 'A1B2C3',
+                                'activated_invite_code': None,
+                                'referred_users': [],
+                                'referred_count': 0,
+                                'can_activate_invite': True
+                            }
+                        }
+                    )
+                ]
+            ),
+            400: OpenApiResponse(description='Неверный код подтверждения'),
+        }
+    )
+)
 class VerifyCodeView(APIView):
     """Подтверждение кода и авторизация пользователя."""
     permission_classes = [AllowAny]
@@ -135,6 +204,28 @@ class VerifyCodeView(APIView):
         return Response(response_data, status=status.HTTP_200_OK)
 
 
+@extend_schema_view(
+    post=extend_schema(
+        tags=['auth'],
+        summary='Выход из системы',
+        description='Завершает сессию текущего пользователя.',
+        responses={
+            200: OpenApiResponse(
+                description='Успешный выход',
+                examples=[
+                    OpenApiExample(
+                        'Успешный ответ',
+                        value={
+                            'status': 'success',
+                            'message': 'Вы успешно вышли из системы'
+                        }
+                    )
+                ]
+            ),
+            401: OpenApiResponse(description='Не авторизован'),
+        }
+    )
+)
 class LogoutView(APIView):
     """Выход из системы."""
     permission_classes = [IsAuthenticated]
@@ -147,6 +238,17 @@ class LogoutView(APIView):
         }, status=status.HTTP_200_OK)
 
 
+@extend_schema_view(
+    get=extend_schema(
+        tags=['profile'],
+        summary='Получение профиля пользователя',
+        description='Возвращает информацию о текущем пользователе, включая реферальную статистику.',
+        responses={
+            200: UserProfileSerializer,
+            401: OpenApiResponse(description='Не авторизован'),
+        }
+    )
+)
 class UserProfileView(APIView):
     """Получение профиля текущего пользователя."""
     permission_classes = [IsAuthenticated]
@@ -158,6 +260,39 @@ class UserProfileView(APIView):
         return Response(serializer.data, status=status.HTTP_200_OK)
 
 
+@extend_schema_view(
+    post=extend_schema(
+        tags=['referral'],
+        summary='Активация инвайт-кода',
+        description='''Активирует инвайт-код другого пользователя.''',
+        request=ActivateInviteCodeSerializer,
+        responses={
+            200: OpenApiResponse(
+                description='Код успешно активирован',
+                examples=[
+                    OpenApiExample(
+                        'Успешная активация',
+                        value={
+                            'status': 'success',
+                            'message': 'Инвайт-код A1B2C3 успешно активирован',
+                            'inviter': {
+                                'phone_number': '+79991234567',
+                                'invite_code': 'A1B2C3'
+                            },
+                            'user': {
+                                'phone_number': '+79998765432',
+                                'activated_invite_code': 'A1B2C3',
+                                'can_activate_invite': False
+                            }
+                        }
+                    )
+                ]
+            ),
+            400: OpenApiResponse(description='Ошибка активации (код не найден, уже активирован и т.д.)'),
+            401: OpenApiResponse(description='Не авторизован'),
+        }
+    )
+)
 class ActivateInviteCodeView(APIView):
     """Активация инвайт-кода."""
     permission_classes = [IsAuthenticated]
@@ -201,6 +336,35 @@ class ActivateInviteCodeView(APIView):
             )
 
 
+@extend_schema_view(
+    get=extend_schema(
+        tags=['stats'],
+        summary='Статистика реферальной системы',
+        description='Возвращает общую статистику по всем пользователям и топ рефереров.',
+        responses={
+            200: OpenApiResponse(
+                description='Статистика',
+                examples=[
+                    OpenApiExample(
+                        'Успешный ответ',
+                        value={
+                            'total_users': 100,
+                            'users_with_activated_invite': 75,
+                            'activation_rate': 75.0,
+                            'top_referrers': [
+                                {
+                                    'phone_number': '+79991234567',
+                                    'invite_code': 'A1B2C3',
+                                    'referral_count': 10
+                                }
+                            ]
+                        }
+                    )
+                ]
+            ),
+        }
+    )
+)
 class ReferralStatsView(APIView):
     """Статистика реферальной системы."""
     permission_classes = [AllowAny]  # Или IsAdminUser для production
@@ -242,6 +406,36 @@ class ReferralStatsView(APIView):
         return Response(data, status=status.HTTP_200_OK)
 
 
+@extend_schema_view(
+    get=extend_schema(
+        tags=['referral'],
+        summary='Список рефералов',
+        description='Возвращает детальный список пользователей, активировавших инвайт-код текущего пользователя.',
+        responses={
+            200: OpenApiResponse(
+                description='Список рефералов',
+                examples=[
+                    OpenApiExample(
+                        'Успешный ответ',
+                        value={
+                            'my_invite_code': 'A1B2C3',
+                            'total_referrals': 2,
+                            'referrals': [
+                                {
+                                    'phone_number': '+79991234567',
+                                    'date_joined': '2026-04-21T10:00:00Z',
+                                    'has_activated_invite': True,
+                                    'referral_count': 1
+                                }
+                            ]
+                        }
+                    )
+                ]
+            ),
+            401: OpenApiResponse(description='Не авторизован'),
+        }
+    )
+)
 class UserReferralsView(APIView):
     """Получение списка рефералов текущего пользователя."""
     permission_classes = [IsAuthenticated]
