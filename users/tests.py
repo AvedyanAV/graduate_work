@@ -1,16 +1,10 @@
 from django.test import TestCase, TransactionTestCase
 from django.urls import reverse
-from django.contrib.auth import get_user_model
 from django.core.cache import cache
 from rest_framework.test import APIClient, APITestCase
 from rest_framework import status
-from unittest.mock import patch
-import time
-
 from .models import User
 from .utils import SMSVerificationService
-
-User = get_user_model()
 
 
 class UserModelTestCase(TestCase):
