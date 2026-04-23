@@ -1,0 +1,153 @@
+<!-- users/templates/users/stats.html -->
+{% extends 'users/base.html' %}
+{% load static %}
+
+{% block title %}Статистика реферальной системы{% endblock %}
+
+{% block content %}
+<div class="container mt-4">
+    <h2 class="mb-4">
+        <i class="fas fa-chart-line me-2"></i>
+        Статистика реферальной системы
+    </h2>
+
+    <div class="row">
+        <!-- Общая статистика -->
+        <div class="col-md-4 mb-4">
+            <div class="card shadow text-center">
+                <div class="card-body">
+                    <i class="fas fa-users fa-3x text-primary mb-3"></i>
+                    <h3 class="card-title" id="total-users">-</h3>
+                    <p class="card-text text-muted">Всего пользователей</p>
+                </div>
+            </div>
+        </div>
+
+        <div class="col-md-4 mb-4">
+            <div class="card shadow text-center">
+                <div class="card-body">
+                    <i class="fas fa-user-check fa-3x text-success mb-3"></i>
+                    <h3 class="card-title" id="activated-users">-</h3>
+                    <p class="card-text text-muted">Активировали инвайт-код</p>
+                </div>
+            </div>
+        </div>
+
+        <div class="col-md-4 mb-4">
+            <div class="card shadow text-center">
+                <div class="card-body">
+                    <i class="fas fa-percentage fa-3x text-info mb-3"></i>
+                    <h3 class="card-title" id="activation-rate">-</h3>
+                    <p class="card-text text-muted">Процент активации</p>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Топ рефереров -->
+    <div class="card shadow">
+        <div class="card-header bg-primary text-white">
+            <h5 class="mb-0">
+                <i class="fas fa-trophy me-2"></i>
+                Топ рефереров
+            </h5>
+        </div>
+        <div class="card-body">
+            <div id="top-referrers-list">
+                <div class="text-center py-3">
+                    <div class="spinner-border text-primary" role="status">
+                        <span class="visually-hidden">Загрузка...</span>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+{% block extra_js %}
+<script>
+    $(document).ready(function() {
+        // Загрузка статистики
+        function loadStats() {
+            $.ajax({
+                url: '/api/stats/referrals/',
+                method: 'GET',
+                success: function(data) {
+                    updateStatsUI(data);
+                },
+                error: function() {
+                    showError('Ошибка загрузки статистики');
+                }
+            });
+        }
+
+        // Обновление UI
+        function updateStatsUI(data) {
+            $('#total-users').text(data.total_users);
+            $('#activated-users').text(data.users_with_activated_invite);
+            $('#activation-rate').text(data.activation_rate + '%');
+
+            // Топ рефереров
+            if (data.top_referrers && data.top_referrers.length > 0) {
+                let html = '<div class="table-responsive"><table class="table table-hover">';
+                html += `
+                    <thead>
+                        <tr>
+                            <th>#</th>
+                            <th>Телефон</th>
+                            <th>Инвайт-код</th>
+                            <th>Рефералов</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                `;
+
+                data.top_referrers.forEach(function(referrer, index) {
+                    let medal = '';
+                    if (index === 0) medal = '🥇';
+                    else if (index === 1) medal = '🥈';
+                    else if (index === 2) medal = '🥉';
+
+                    html += `
+                        <tr>
+                            <td>${medal} ${index + 1}</td>
+                            <td>${referrer.phone_number}</td>
+                            <td><code>${referrer.invite_code}</code></td>
+                            <td>
+                                <span class="badge bg-primary rounded-pill">
+                                    ${referrer.referral_count}
+                                </span>
+                            </td>
+                        </tr>
+                    `;
+                });
+
+                html += '</tbody></table></div>';
+                $('#top-referrers-list').html(html);
+            } else {
+                $('#top-referrers-list').html(`
+                    <div class="text-center text-muted py-4">
+                        <i class="fas fa-users-slash fa-3x mb-3"></i>
+                        <p>Пока нет данных о рефералах</p>
+                    </div>
+                `);
+            }
+        }
+
+        function showError(text) {
+            let messageHtml = `
+                <div class="alert alert-danger alert-dismissible fade show mt-3" role="alert">
+                    <i class="fas fa-exclamation-circle me-2"></i>${text}
+                    <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+                </div>
+            `;
+            $('.container').prepend(messageHtml);
+        }
+
+        // Загружаем статистику при загрузке и каждые 30 секунд
+        loadStats();
+        setInterval(loadStats, 30000);
+    });
+</script>
+{% endblock %}
+{% endblock %}

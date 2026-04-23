@@ -1,0 +1,319 @@
+{
+  "info": {
+    "name": "Реферальная система API",
+    "description": "Коллекция запросов для тестирования API реферальной системы",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json",
+    "_postman_id": "referral-system-api-v1"
+  },
+  "variable": [
+    {
+      "key": "base_url",
+      "value": "http://127.0.0.1:8000",
+      "type": "string"
+    },
+    {
+      "key": "phone_number",
+      "value": "+79991234567",
+      "type": "string"
+    },
+    {
+      "key": "verification_code",
+      "value": "1234",
+      "type": "string"
+    },
+    {
+      "key": "invite_code",
+      "value": "",
+      "type": "string"
+    }
+  ],
+  "item": [
+    {
+      "name": "Auth",
+      "description": "Эндпоинты для авторизации",
+      "item": [
+        {
+          "name": "Отправка кода подтверждения",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test(\"Status code is 200\", function () {",
+                  "    pm.response.to.have.status(200);",
+                  "});",
+                  "",
+                  "pm.test(\"Response has status success\", function () {",
+                  "    var jsonData = pm.response.json();",
+                  "    pm.expect(jsonData.status).to.eql(\"success\");",
+                  "});",
+                  "",
+                  "// Сохраняем код для следующего запроса",
+                  "var jsonData = pm.response.json();",
+                  "if (jsonData.debug_code) {",
+                  "    pm.environment.set(\"verification_code\", jsonData.debug_code);",
+                  "}"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n    \"phone_number\": \"{{phone_number}}\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{base_url}}/api/auth/send-code/",
+              "host": ["{{base_url}}"],
+              "path": ["api", "auth", "send-code"]
+            },
+            "description": "Отправляет 4-значный код подтверждения на указанный номер телефона.\n\nВ тестовом режиме код всегда 1234 и возвращается в ответе."
+          },
+          "response": []
+        },
+        {
+          "name": "Подтверждение кода (вход/регистрация)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test(\"Status code is 200\", function () {",
+                  "    pm.response.to.have.status(200);",
+                  "});",
+                  "",
+                  "pm.test(\"Response has user data\", function () {",
+                  "    var jsonData = pm.response.json();",
+                  "    pm.expect(jsonData.user).to.be.an('object');",
+                  "    pm.expect(jsonData.user.phone_number).to.eql(pm.variables.get(\"phone_number\"));",
+                  "});",
+                  "",
+                  "// Сохраняем инвайт-код пользователя",
+                  "var jsonData = pm.response.json();",
+                  "if (jsonData.user && jsonData.user.invite_code) {",
+                  "    pm.environment.set(\"my_invite_code\", jsonData.user.invite_code);",
+                  "}"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n    \"phone_number\": \"{{phone_number}}\",\n    \"code\": \"{{verification_code}}\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{base_url}}/api/auth/verify-code/",
+              "host": ["{{base_url}}"],
+              "path": ["api", "auth", "verify-code"]
+            },
+            "description": "Проверяет код подтверждения и авторизует пользователя. При первом входе создает аккаунт и генерирует инвайт-код."
+          },
+          "response": []
+        },
+        {
+          "name": "Выход из системы",
+          "request": {
+            "method": "POST",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/api/auth/logout/",
+              "host": ["{{base_url}}"],
+              "path": ["api", "auth", "logout"]
+            },
+            "description": "Завершает текущую сессию пользователя."
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "Profile",
+      "description": "Эндпоинты для работы с профилем",
+      "item": [
+        {
+          "name": "Получение профиля",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test(\"Status code is 200\", function () {",
+                  "    pm.response.to.have.status(200);",
+                  "});",
+                  "",
+                  "pm.test(\"Profile contains required fields\", function () {",
+                  "    var jsonData = pm.response.json();",
+                  "    pm.expect(jsonData).to.have.property('phone_number');",
+                  "    pm.expect(jsonData).to.have.property('invite_code');",
+                  "    pm.expect(jsonData).to.have.property('referred_users');",
+                  "    pm.expect(jsonData).to.have.property('can_activate_invite');",
+                  "});"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/api/profile/",
+              "host": ["{{base_url}}"],
+              "path": ["api", "profile"]
+            },
+            "description": "Возвращает информацию о текущем пользователе, включая реферальную статистику."
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "Referral",
+      "description": "Эндпоинты реферальной системы",
+      "item": [
+        {
+          "name": "Активация инвайт-кода",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test(\"Status code is 200 or 400\", function () {",
+                  "    pm.expect(pm.response.code).to.be.oneOf([200, 400]);",
+                  "});"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n    \"invite_code\": \"{{invite_code}}\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{base_url}}/api/profile/activate-invite/",
+              "host": ["{{base_url}}"],
+              "path": ["api", "profile", "activate-invite"]
+            },
+            "description": "Активирует инвайт-код другого пользователя. Можно активировать только один код."
+          },
+          "response": []
+        },
+        {
+          "name": "Список моих рефералов",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test(\"Status code is 200\", function () {",
+                  "    pm.response.to.have.status(200);",
+                  "});",
+                  "",
+                  "pm.test(\"Response has referrals array\", function () {",
+                  "    var jsonData = pm.response.json();",
+                  "    pm.expect(jsonData).to.have.property('referrals');",
+                  "    pm.expect(jsonData.referrals).to.be.an('array');",
+                  "});"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/api/profile/referrals/",
+              "host": ["{{base_url}}"],
+              "path": ["api", "profile", "referrals"]
+            },
+            "description": "Возвращает детальный список пользователей, активировавших инвайт-код текущего пользователя."
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "Stats",
+      "description": "Эндпоинты статистики",
+      "item": [
+        {
+          "name": "Статистика реферальной системы",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test(\"Status code is 200\", function () {",
+                  "    pm.response.to.have.status(200);",
+                  "});",
+                  "",
+                  "pm.test(\"Response has stats data\", function () {",
+                  "    var jsonData = pm.response.json();",
+                  "    pm.expect(jsonData).to.have.property('total_users');",
+                  "    pm.expect(jsonData).to.have.property('users_with_activated_invite');",
+                  "    pm.expect(jsonData).to.have.property('activation_rate');",
+                  "    pm.expect(jsonData).to.have.property('top_referrers');",
+                  "});"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/api/stats/referrals/",
+              "host": ["{{base_url}}"],
+              "path": ["api", "stats", "referrals"]
+            },
+            "description": "Возвращает общую статистику по всем пользователям и топ рефереров."
+          },
+          "response": []
+        }
+      ]
+    }
+  ]
+}
